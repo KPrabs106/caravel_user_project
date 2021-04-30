@@ -37,7 +37,7 @@ SIM?=RTL
 
 .SUFFIXES:
 
-PATTERN = io_ports
+PATTERN = gcd
 
 all:  ${PATTERN:=.vcd}
 

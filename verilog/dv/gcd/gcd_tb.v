@@ -20,22 +20,26 @@
 `include "uprj_netlists.v"
 `include "caravel_netlists.v"
 `include "spiflash.v"
-`include "tbuart.v"
 
-module la_test1_tb;
+module gcd_tb;
 	reg clock;
-    reg RSTB;
+	reg RSTB;
 	reg CSB;
-
 	reg power1, power2;
+	reg power3, power4;
 
-    	wire gpio;
-	wire uart_tx;
-    	wire [37:0] mprj_io;
+	wire gpio;
+	wire [37:0] mprj_io;
+	wire [7:0] mprj_io_0;
 	wire [15:0] checkbits;
 
-	assign checkbits  = mprj_io[31:16];
-	assign uart_tx = mprj_io[6];
+	assign checkbits = mprj_io[31:16];
+
+	assign mprj_io[3] = (CSB == 1'b1) ? 1'b1 : 1'bz;
+
+	// External clock is used by default.  Make this artificially fast for the
+	// simulation.  Normally this would be a slow clock and the digital PLL
+	// would be the fast clock.
 
 	always #12.5 clock <= (clock === 1'b0);
 
@@ -43,34 +47,44 @@ module la_test1_tb;
 		clock = 0;
 	end
 
-	assign mprj_io[3] = (CSB == 1'b1) ? 1'b1 : 1'bz;
-
 	initial begin
-		// $dumpfile("la_test1.vcd");
-		// $dumpvars(0, la_test1_tb);
+		$dumpfile("gcd.vcd");
+		$dumpvars(0, gcd_tb);
 
 		// Repeat cycles of 1000 clock edges as needed to complete testbench
-		repeat (200) begin
+		repeat (30) begin
 			repeat (1000) @(posedge clock);
 			// $display("+1000 cycles");
 		end
 		$display("%c[1;31m",27);
 		`ifdef GL
-			$display ("Monitor: Timeout, Test LA (GL) Failed");
+			$display ("Monitor: Timeout, Test Mega-Project WB Port (GL) Failed");
 		`else
-			$display ("Monitor: Timeout, Test LA (RTL) Failed");
+			$display ("Monitor: Timeout, Test Mega-Project WB Port (RTL) Failed");
 		`endif
 		$display("%c[0m",27);
 		$finish;
 	end
 
 	initial begin
-		wait(checkbits == 16'hAB40);
-		$display("LA Test 1 started");
-		wait(checkbits == 16'hAB41);
-		wait(checkbits == 16'hAB51);
-		#10000;
-		$finish;
+	   wait(checkbits == 16'h AB60);
+		$display("Monitor: MPRJ-Logic WB Started");
+		wait((checkbits == 16'h AB61) || (checkbits == 16'h AB62));
+		if(checkbits == 16'h AB61) begin
+			`ifdef GL
+				$display("Monitor: Mega-Project WB (GL) Passed");
+			`else
+				$display("Monitor: Mega-Project WB (RTL) Passed");
+			`endif
+		end
+		else begin
+			`ifdef GL
+	    		$display("Monitor: Mega-Project WB (GL) Failed");
+			`else
+				$display("Monitor: Mega-Project WB (RTL) Failed");
+			`endif
+		end
+	    $finish;
 	end
 
 	initial begin
@@ -85,24 +99,32 @@ module la_test1_tb;
 	initial begin		// Power-up sequence
 		power1 <= 1'b0;
 		power2 <= 1'b0;
-		#200;
+		power3 <= 1'b0;
+		power4 <= 1'b0;
+		#100;
 		power1 <= 1'b1;
-		#200;
+		#100;
 		power2 <= 1'b1;
+		#100;
+		power3 <= 1'b1;
+		#100;
+		power4 <= 1'b1;
 	end
 
-    	wire flash_csb;
+	always @(mprj_io) begin
+		#1 $display("MPRJ-IO state = %b ", mprj_io[7:0]);
+	end
+
+	wire flash_csb;
 	wire flash_clk;
 	wire flash_io0;
 	wire flash_io1;
 
-	wire VDD1V8;
-    	wire VDD3V3;
-	wire VSS;
-    
-	assign VDD3V3 = power1;
-	assign VDD1V8 = power2;
-	assign VSS = 1'b0;
+	wire VDD3V3 = power1;
+	wire VDD1V8 = power2;
+	wire USER_VDD3V3 = power3;
+	wire USER_VDD1V8 = power4;
+	wire VSS = 1'b0;
 
 	caravel uut (
 		.vddio	  (VDD3V3),
@@ -111,17 +133,17 @@ module la_test1_tb;
 		.vssa	  (VSS),
 		.vccd	  (VDD1V8),
 		.vssd	  (VSS),
-		.vdda1    (VDD3V3),
-		.vdda2    (VDD3V3),
+		.vdda1    (USER_VDD3V3),
+		.vdda2    (USER_VDD3V3),
 		.vssa1	  (VSS),
 		.vssa2	  (VSS),
-		.vccd1	  (VDD1V8),
-		.vccd2	  (VDD1V8),
+		.vccd1	  (USER_VDD1V8),
+		.vccd2	  (USER_VDD1V8),
 		.vssd1	  (VSS),
 		.vssd2	  (VSS),
 		.clock	  (clock),
 		.gpio     (gpio),
-        	.mprj_io  (mprj_io),
+        .mprj_io  (mprj_io),
 		.flash_csb(flash_csb),
 		.flash_clk(flash_clk),
 		.flash_io0(flash_io0),
@@ -130,7 +152,7 @@ module la_test1_tb;
 	);
 
 	spiflash #(
-		.FILENAME("la_test1.hex")
+		.FILENAME("gcd.hex")
 	) spiflash (
 		.csb(flash_csb),
 		.clk(flash_clk),
@@ -138,11 +160,6 @@ module la_test1_tb;
 		.io1(flash_io1),
 		.io2(),			// not used
 		.io3()			// not used
-	);
-
-	// Testbench UART
-	tbuart tbuart (
-		.ser_rx(uart_tx)
 	);
 
 endmodule
